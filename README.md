@@ -1,17 +1,32 @@
-# Method-Optimized Integration of Fecal Metabolomics and Transcriptomics in CRC
+# Integrative Reanalysis of Cross-Cohort Multi-Omics in Colorectal Cancer
 
-This repository contains the data and analytical scripts required to reproduce the metabolomic findings presented in the manuscript:
-**"Method-Optimized Reanalysis of Fecal Metabolomics and TCGA-GTEx Transcriptomics Identifies Parallel Dysregulation of Three Metabolic Axes in Colorectal Malignant Transformation."**
+[![R version](https://img.shields.io/badge/R-v4.3.0+-blue.svg)](https://www.r-project.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Data: Metabolomics](https://img.shields.io/badge/Data-ST002787-orange.svg)](https://www.metabolomicsworkbench.org/)
+[![Data: TCGA-GTEx](https://img.shields.io/badge/Data-TCGA%20%7C%20GTEx-purple.svg)](https://portal.gdc.cancer.gov/)
 
-## 📁 Repository Structure
+Welcome to the official computational repository for our manuscript: **"Integrative Reanalysis of Cross-Cohort Multi-Omics Reveals Synchronized Dysregulation of Three Metabolic Axes and Yields a Robust Diagnostic Panel for Colorectal Cancer"** (Under Review at *Journal of Translational Medicine*).
 
-* `data/`: Contains the processed LC-MS feature matrices for both negative and positive ion modes (derived from Metabolomics Workbench Study ID: ST002787).
-* `scripts/`: Contains the R pipelines used for statistical modeling, biomarker discovery, and ontology-guided stratification.
-* `results/`: Contains the computationally extracted list of host-endogenous metabolites (`.txt`) used for downstream KEGG pathway enrichment in MetaboAnalyst 5.0.
+This repository serves as the transparent computational backbone of our study. While the final high-resolution figures are provided as manuscript attachments, this repository contains the raw curated datasets and the exact R scripts required to reproduce our statistical analyses, machine learning models, and cross-omics mappings from scratch.
 
-## ⚙️ Prerequisites and Installation
+---
 
-To execute the pipelines, R (version 4.0.0 or higher) is required. Please ensure the following R packages are installed:
-```R
-install.packages(c("jsonlite", "dplyr", "stringr", "tibble", "ggplot2", "scales", "pROC", "ggVennDiagram", "ggrepel", "pheatmap", "readr"))
-BiocManager::install(c("impute", "ropls"))
+## 📂 Repository Structure
+
+The repository is streamlined into three main directories: `data/`, `scripts/`, and `results/`.
+
+```text
+CRC_MultiOmics_Integration/
+├── data/                                         # Curated input datasets
+│   ├── st002787_negative_clean.txt               # Negative ion mode LC-MS data
+│   ├── st002787_positive_clean.txt               # Positive ion mode LC-MS data
+│   ├── InputData_03_TCGA_CRC_ASAH1_TPM_Stratified.csv # Transcriptomic expression matrix
+│   └── InputData_04_TCGA_CRC_Clinical_Survival.csv    # Clinical metadata for Cox regression
+├── scripts/                                      # Sequential R execution scripts
+│   ├── 01_Metabolomics_Pipeline.R                # Data prep, PLS-DA, and differential analysis
+│   ├── 02_Ontology_Pathway_Analysis.R            # HMDB stratification to prevent ecological fallacy
+│   ├── 03_Clinical_Cox_Regression.R              # Multivariate survival & transcriptomic mapping
+│   └── 04_ML_Diagnostic_Panel.R                  # Random Forest & ROC panel construction
+├── results/                                      # Computational outputs
+│   └── Step2_Host_Metabolites_for_MetaboAnalyst.txt # Filtered host-endogenous pool list
+└── README.md
