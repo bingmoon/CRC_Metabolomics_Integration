@@ -1,5 +1,6 @@
 # ==========================================
-# 结直肠癌 (ST002787) 终极双离子模式全自动分析流水线 (兼容所有 ropls 版本)
+# 结直肠癌 (ST002787) 终极双离子模式全自动分析流水线 
+# (顶刊级美颜版 - 解决重叠 & 统一配色)
 # ==========================================
 
 # 1. 加载所有依赖包
@@ -11,12 +12,20 @@ suppressMessages({
   library(impute)
   library(ggplot2)
   library(scales)
-  library(ropls)     # 代谢组金标准：带置换检验的PLS-DA
-  library(pROC)      # 计算诊断效能 AUC 及 CI
-  library(ggVennDiagram) # 绘制韦恩图
-  library(ggrepel)   # 火山图标签防重叠
-  library(pheatmap)   # 画热图
+  library(ropls)        # 代谢组金标准：带置换检验的PLS-DA
+  library(pROC)         # 计算诊断效能 AUC 及 CI
+  library(ggVennDiagram)# 绘制韦恩图
+  library(ggrepel)      # 火山图标签防重叠
+  library(pheatmap)     # 画热图
 })
+
+# ==========================================
+# 【美颜配置区】：定义全局统一的高级配色方案
+# ==========================================
+col_hc  <- "#1B9E77"   # 绿色 (Healthy Control)
+col_cra <- "#D95F02"   # 橙色 (Colorectal Adenoma)
+col_crc <- "#E7298A"   # 红色 (Colorectal Cancer)
+col_ns  <- "#CCCCCC"   # 灰色 (Not Significant)
 
 # ==========================================
 # 第一部分：精确清洗分组信息（从云端拉取，只需运行一次）
@@ -71,14 +80,20 @@ run_metabolomics_pipeline <- function(data_path, mode_prefix, sample_info) {
   expr_pareto <- scale(expr_imputed, center = TRUE, scale = sqrt(apply(expr_imputed, 2, sd)))
   rownames(expr_pareto) <- analysis_dataset$SampleID
   
-  # 3. 输出图1：三组全局 PCA 轨迹图
+  # 3. 输出图1：三组全局 PCA 轨迹图 (采用统一配色)
   pca_result <- prcomp(expr_pareto, scale. = FALSE)
   pca_df <- as.data.frame(pca_result$x[, 1:2]) %>% mutate(Group = group_factor)
+  
   p_pca <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Group)) +
-    geom_point(size = 3.5, alpha = 0.75) + stat_ellipse(level = 0.95, linewidth = 1.2, linetype = "dashed") + 
-    scale_color_manual(values = c("Heathy control"="#1ABC9C", "Colorectal adenoma"="#F39C12", "Colorectal cancer"="#E74C3C")) +
-    theme_bw(base_size = 15) + labs(title = paste(mode_prefix, "- Global PCA Trajectory"))
-  ggsave(paste0(mode_prefix, "_Figure_1_PCA.pdf"), p_pca, width = 8, height = 6)
+    geom_point(size = 3.5, alpha = 0.8) + 
+    stat_ellipse(level = 0.95, linewidth = 1.2, linetype = "dashed") + 
+    scale_color_manual(values = c("Heathy control" = col_hc, 
+                                  "Colorectal adenoma" = col_cra, 
+                                  "Colorectal cancer" = col_crc)) +
+    theme_bw(base_size = 15) + 
+    labs(title = paste(mode_prefix, "- Global PCA Trajectory"))
+  
+  ggsave(paste0(mode_prefix, "_Figure_1_PCA.pdf"), p_pca, width = 8, height = 6, dpi = 300)
   
   # ==============================================
   # 内部函数：专门用于执行两两对比 (非参数检验 + 置换检验PLS-DA)
@@ -100,16 +115,10 @@ run_metabolomics_pipeline <- function(data_path, mode_prefix, sample_info) {
       log2((m2 + 1e-5) / (m1 + 1e-5))
     })
     
-    # 带有 200次置换检验的 PLS-DA (万能兼容版)
-    cat(sprintf("正在计算 [%s] 的 PLS-DA 及置换检验 (请稍候，需要几秒钟)...\n", comp_name))
-    
-    # 我们先打开 PDF，这样无论 ropls 怎么自动画图，都会乖乖进到 PDF 里，绝对不报错
+    # 带有 200次置换检验的 PLS-DA
+    cat(sprintf("正在计算 [%s] 的 PLS-DA 及置换检验...\n", comp_name))
     pdf(paste0(mode_prefix, "_Figure_S1_PLSDA_Permutation_", comp_name, ".pdf"), width=6, height=5)
-    
-    # 强制指定 ropls::opls，并且只给最基础的 4 个参数
     plsda_mod <- ropls::opls(X_par, Y_fac, predI = 2, permI = 200)
-    
-    # 追加绘制标准的 Permutation 检验图
     plot(plsda_mod, typeVc = "permutation")
     dev.off()
     
@@ -117,19 +126,18 @@ run_metabolomics_pipeline <- function(data_path, mode_prefix, sample_info) {
     vip_values <- getVipVn(plsda_mod)
     vip_df <- data.frame(Metabolite = names(vip_values), VIP = as.numeric(vip_values))
     
-    # 【无痕升级区】：计算 ROC 的 AUC 值及其 95% 置信区间
-    cat(sprintf("正在计算 [%s] 所有代谢物的 AUC 及 95%% 置信区间...\n", comp_name))
+    # 计算 ROC 的 AUC 值及其 95% 置信区间
+    cat(sprintf("正在计算 [%s] 的 AUC 及 95%% CI...\n", comp_name))
     roc_results <- lapply(as.data.frame(X_raw), function(x) {
       r <- roc(Y_fac, x, quiet = TRUE)
       ci_val <- ci.auc(r)
-      # 返回: AUC, CI下限, CI上限
       return(c(AUC = as.numeric(ci_val[2]), 
                CI_lower = as.numeric(ci_val[1]), 
                CI_upper = as.numeric(ci_val[3])))
     })
     roc_mat <- do.call(rbind, roc_results)
     
-    # 整理结果并合并 (新增 AUC_95CI_Lower 和 AUC_95CI_Upper 两列)
+    # 整理结果并合并
     res <- data.frame(
       Metabolite = colnames(X_raw),
       Log2FC = log2fc,
@@ -140,12 +148,10 @@ run_metabolomics_pipeline <- function(data_path, mode_prefix, sample_info) {
       AUC_95CI_Upper = roc_mat[, "CI_upper"]
     ) %>% left_join(vip_df, by = "Metabolite") %>%
       mutate(
-        # 严格筛选标准：FDR < 0.05, VIP > 1, 且 FC变化绝对值超过0.58
         Status = case_when(FDR < 0.05 & VIP > 1 & Log2FC > 0.58 ~ "Up",
                            FDR < 0.05 & VIP > 1 & Log2FC < -0.58 ~ "Down",
                            TRUE ~ "Not Sig")
       ) %>% arrange(desc(VIP))
-    # 【升级区结束】
     
     write.csv(res, paste0(mode_prefix, "_Table_", comp_name, "_Full_Results.csv"), row.names = FALSE)
     return(list(res = res, X_par = X_par, Y_fac = Y_fac))
@@ -158,14 +164,16 @@ run_metabolomics_pipeline <- function(data_path, mode_prefix, sample_info) {
   cat("---> 分析 2: 腺瘤 vs 肠癌 (CRA vs CRC) ...\n")
   comp_cra_crc <- run_comparison("Colorectal adenoma", "Colorectal cancer", "CRA_vs_CRC")
   
-  # 5. 输出图2：韦恩图 (找出阶段特异性代谢物，反击审稿人)
+  # 5. 输出图2：韦恩图 (配色过渡到 CRC 的红色)
   sig_cra <- comp_hc_cra$res %>% filter(Status != "Not Sig") %>% pull(Metabolite)
   sig_crc <- comp_cra_crc$res %>% filter(Status != "Not Sig") %>% pull(Metabolite)
   
   venn_list <- list("Early Adenoma Phase" = sig_cra, "Malignant Transformation (CRC)" = sig_crc)
-  p_venn <- ggVennDiagram(venn_list) + scale_fill_gradient(low="white", high="#E74C3C") +
-    labs(title = paste(mode_prefix, "- Phase Specific Alterations")) + theme(legend.position = "none")
-  ggsave(paste0(mode_prefix, "_Figure_2_Venn.pdf"), p_venn, width = 6, height = 5)
+  p_venn <- ggVennDiagram(venn_list) + 
+    scale_fill_gradient(low = "white", high = col_crc) +
+    labs(title = paste(mode_prefix, "- Phase Specific Alterations")) + 
+    theme(legend.position = "none")
+  ggsave(paste0(mode_prefix, "_Figure_2_Venn.pdf"), p_venn, width = 6, height = 5, dpi = 300)
   
   # ==============================================
   # 重点关注恶性转化阶段 (CRA vs CRC)，绘制核心三件套
@@ -174,26 +182,40 @@ run_metabolomics_pipeline <- function(data_path, mode_prefix, sample_info) {
   sig_crc_full <- res_crc %>% filter(Status != "Not Sig")
   
   if(nrow(sig_crc_full) > 0) {
-    # 6. 输出图3：火山图
+    # 6. 输出图3：火山图 (终极美颜版：解决重叠，统一配色)
     p_volcano <- ggplot(res_crc, aes(x = Log2FC, y = -log10(FDR), color = Status)) +
       geom_point(alpha = 0.8, size = 2.5) +
-      scale_color_manual(values = c("Up" = "#E64B35", "Down" = "#4DBBD5", "Not Sig" = "#CCCCCC")) +
-      geom_vline(xintercept = c(-0.58, 0.58), linetype = "dashed", alpha = 0.5) +
-      geom_hline(yintercept = -log10(0.05), linetype = "dashed", alpha = 0.5) +
-      geom_text_repel(data = head(sig_crc_full, 15), aes(label = Metabolite), size = 3, max.overlaps = 30) +
-      theme_classic(base_size = 14) +
-      labs(title = paste(mode_prefix, "- Volcano: CRA vs CRC"), x = "Log2(FC)", y = "-Log10(FDR)")
-    ggsave(paste0(mode_prefix, "_Figure_3_Volcano.pdf"), p_volcano, width = 7, height = 6)
+      scale_color_manual(values = c("Up" = col_crc, "Down" = col_cra, "Not Sig" = col_ns)) +
+      geom_vline(xintercept = c(-0.58, 0.58), linetype = "dashed", alpha = 0.5, color="grey30") +
+      geom_hline(yintercept = -log10(0.05), linetype = "dashed", alpha = 0.5, color="grey30") +
+      geom_text_repel(
+        data = head(sig_crc_full, 20),  # 提取Top 20的核心代谢物加标签
+        aes(label = Metabolite), 
+        size = 3.5, 
+        fontface = "bold",
+        box.padding = 0.8,              # 增加文本框周围的排斥力
+        point.padding = 0.4,            # 增加文本与点之间的距离
+        force = 5,                      # 强力推开重叠标签
+        segment.color = "grey50",       # 引导线颜色
+        segment.size = 0.5,             # 引导线粗细
+        min.segment.length = 0,         # 强制画出所有引导线
+        max.overlaps = Inf              # 核心：无限重叠也强制全部显示
+      ) +
+      theme_classic(base_size = 15) +
+      labs(title = paste(mode_prefix, "- Volcano: CRA vs CRC"), x = "Log2(FC)", y = "-Log10(FDR)") +
+      theme(plot.title = element_text(face = "bold", hjust = 0.5))
+    
+    ggsave(paste0(mode_prefix, "_Figure_3_Volcano.pdf"), p_volcano, width = 8, height = 7, dpi = 300)
     
     # 7. 输出图4：Top 15 VIP 排位图
     top_vip <- head(sig_crc_full, 15) %>% arrange(VIP) %>% mutate(Metabolite = factor(Metabolite, levels = Metabolite))
     p_vip <- ggplot(top_vip, aes(x = Metabolite, y = VIP, color = Status)) +
       geom_segment(aes(x = Metabolite, xend = Metabolite, y = 0, yend = VIP), linewidth = 1.2) +
       geom_point(size = 4) +
-      scale_color_manual(values = c("Up" = "#E64B35", "Down" = "#4DBBD5")) +
+      scale_color_manual(values = c("Up" = col_crc, "Down" = col_cra)) +
       coord_flip() + theme_bw(base_size = 14) +
       labs(title = paste(mode_prefix, "- Top VIP Drivers"), x = "", y = "VIP Score")
-    ggsave(paste0(mode_prefix, "_Figure_4_VIP.pdf"), p_vip, width = 7, height = 6)
+    ggsave(paste0(mode_prefix, "_Figure_4_VIP.pdf"), p_vip, width = 7, height = 6, dpi = 300)
     
     # 8. 输出图5：Top 25 差异代谢物聚类热图
     if(nrow(sig_crc_full) >= 2) {
@@ -201,11 +223,15 @@ run_metabolomics_pipeline <- function(data_path, mode_prefix, sample_info) {
       heatmap_data <- t(comp_cra_crc$X_par[, top_metabolites]) 
       annotation_col <- data.frame(Group = comp_cra_crc$Y_fac)
       rownames(annotation_col) <- rownames(comp_cra_crc$X_par)
-      ann_colors = list(Group = c("Colorectal adenoma" = "#F39C12", "Colorectal cancer" = "#E74C3C"))
       
-      pheatmap(heatmap_data, annotation_col = annotation_col, annotation_colors = ann_colors,
+      # 热图注释条的颜色严格对应分组全局颜色
+      ann_colors = list(Group = c("Colorectal adenoma" = col_cra, "Colorectal cancer" = col_crc))
+      
+      pheatmap(heatmap_data, 
+               annotation_col = annotation_col, 
+               annotation_colors = ann_colors,
                scale = "row", cluster_cols = TRUE, show_colnames = FALSE, fontsize_row = 8,
-               color = colorRampPalette(c("#4DBBD5", "white", "#E64B35"))(50), 
+               color = colorRampPalette(c("#4DBBD5", "white", col_crc))(50), # 热图表达量色阶
                main = paste(mode_prefix, "- Metabolic Reprogramming (CRA vs CRC)"),
                filename = paste0(mode_prefix, "_Figure_5_Heatmap.pdf"), width = 8, height = 7)
     }
@@ -228,5 +254,3 @@ run_metabolomics_pipeline(data_path = neg_path, mode_prefix = "NEG", sample_info
 
 # 开始处理正离子模式！
 run_metabolomics_pipeline(data_path = pos_path, mode_prefix = "POS", sample_info = sample_info)
-
-
